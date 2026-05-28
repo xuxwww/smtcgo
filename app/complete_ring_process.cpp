@@ -15,6 +15,7 @@
 #include "skeleton.h"
 #include "video_skeleton_process.h"
 #include "find_line_lib/common.h"
+#include "find_line_lib/get_start_point.h"
 
 using namespace cv_boost;
 using namespace find_line_lib;
@@ -496,29 +497,44 @@ int main() {
 
         cv::Mat result_img = resized.clone();
         cv::Mat road_mask = cv::Mat::zeros(120, 160, CV_8UC1);
-        int max_bottom_y = -1;
         int best_contour_index = -1;
-        int min_area = 160 * 120 * 20 / 100;
-        int image_center_x = 80;
+        int min_area = 160 * 120 * 10 / 100;
+        int img_height = 120;
+        int img_width = 160;
 
+        uint8_t full_binary[120 * 160];
+        for (int y = 0; y < img_height; ++y) {
+            for (int x = 0; x < img_width; ++x) {
+                full_binary[y * img_width + x] = dilated.at<uint8_t>(y, x);
+            }
+        }
+
+        int ref_center_x = img_width / 2;
+        auto start_result = find_line_lib::get_start_point(
+            full_binary, img_width, img_height,
+            &find_line_lib::Point(img_width / 2, img_height - 1),
+            1, img_width - 1, 1, img_height - 1, "horizontal");
+        if (start_result != nullptr) {
+            auto& left_pt = std::get<0>(*start_result);
+            auto& right_pt = std::get<1>(*start_result);
+            ref_center_x = (left_pt.x + right_pt.x) / 2;
+        }
+
+        int best_dist = img_width;
         for (size_t i = 0; i < contours.size(); ++i) {
             double area = cv::contourArea(contours[i]);
             if (area < min_area) continue;
 
             cv::Rect bounding = cv::boundingRect(contours[i]);
             int bottom_y = bounding.y + bounding.height;
-            int contour_center_x = bounding.x + bounding.width / 2;
 
-            if (bottom_y > max_bottom_y) {
-                max_bottom_y = bottom_y;
+            if (bottom_y < img_height - 2) continue;
+
+            int contour_center_x = bounding.x + bounding.width / 2;
+            int dist = std::abs(contour_center_x - ref_center_x);
+            if (dist < best_dist) {
+                best_dist = dist;
                 best_contour_index = static_cast<int>(i);
-            } else if (bottom_y == max_bottom_y && best_contour_index >= 0) {
-                cv::Rect previous = cv::boundingRect(contours[best_contour_index]);
-                int previous_center_x = previous.x + previous.width / 2;
-                if (std::abs(contour_center_x - image_center_x) <
-                    std::abs(previous_center_x - image_center_x)) {
-                    best_contour_index = static_cast<int>(i);
-                }
             }
         }
 
