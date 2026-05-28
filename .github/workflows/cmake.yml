@@ -1,0 +1,128 @@
+name: CMake Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # =========================================================================
+  # 1. 专门安装和构建 Conan 依赖的 Job
+  # =========================================================================
+  conan-deps:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Conan
+        run: pip install --quiet conan
+
+      - name: Setup MSVC
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Install Build Tools (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Conan Binary Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: ${{ matrix.os }}-conan-${{ hashFiles('conanfile.*') }}
+          restore-keys: |
+            ${{ matrix.os }}-conan-
+
+      - name: Conan Install
+        shell: bash
+        run: |
+          conan profile detect --force
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            conan install . --build=missing -s build_type=Release -s os=Linux -s arch=x86_64 -o opencv/*:with_ffmpeg=False -o opencv/*:with_gtk=False -c tools.cmake.cmaketoolchain:generator=Ninja --output-folder=build
+          else
+            conan install . --build=missing -s build_type=Release -s os=Windows -s arch=x86_64 -o opencv/*:with_ffmpeg=False -c tools.cmake.cmaketoolchain:generator=Ninja --output-folder=build
+          fi
+
+  # =========================================================================
+  # 2. 编译与测试 Job
+  # =========================================================================
+  build-and-test:
+    needs: conan-deps
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Conan
+        run: pip install --quiet conan
+
+      - name: Setup MSVC
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Restore Conan Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: ${{ matrix.os }}-conan-${{ hashFiles('conanfile.*') }}
+          restore-keys: |
+            ${{ matrix.os }}-conan-
+
+      - name: Install Build Tools (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Conan Install
+        shell: bash
+        run: |
+          conan profile detect --force
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            conan install . --build=missing -s build_type=Release -o opencv/*:with_ffmpeg=False -o opencv/*:with_gtk=False -c tools.cmake.cmaketoolchain:generator=Ninja --output-folder=build
+          else
+            conan install . --build=missing -s build_type=Release -o opencv/*:with_ffmpeg=False -c tools.cmake.cmaketoolchain:generator=Ninja --output-folder=build
+          fi
+
+      # ---------------- Linux 编译流程 ----------------
+      - name: Configure & Build (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cmake --preset conan-release
+          cmake --build --preset conan-release --parallel
+          ctest --preset conan-release --output-on-failure
+
+      # ---------------- Windows 编译流程 ----------------
+      - name: Configure & Build (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          cmake --preset conan-release
+          cmake --build --preset conan-release --parallel
+          ctest --preset conan-release --output-on-failure

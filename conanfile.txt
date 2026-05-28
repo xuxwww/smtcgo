@@ -1,0 +1,7 @@
+[requires]
+opencv/4.10.0
+boost/1.87.0
+gtest/1.15.0
+[generators]
+CMakeToolchain
+CMakeDeps

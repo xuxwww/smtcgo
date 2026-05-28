@@ -1,0 +1,24 @@
+# Build directories
+build/
+.cache/
+
+# Dependencies
+conanfile.txt.user
+conaninfo.txt
+conan_libs.properties
+conanvcpkgvars.ps1
+
+# IDE
+.idea/
+.vs/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+CMakeUserPresets.json
+skeleton_compare_output/
+debug_frames
