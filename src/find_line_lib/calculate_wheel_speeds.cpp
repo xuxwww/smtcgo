@@ -19,7 +19,7 @@
 namespace find_line_lib {
 
 // ==================== 匿名命名空间：辅助函数 ====================
-namespace 
+namespace
 {
 
 const char* ring_status_name(RingStatus status) {
@@ -318,12 +318,8 @@ std::tuple<float, float> calculate_wheel_speeds(const Point* line, int line_size
     return std::make_tuple(left_speed, right_speed);
 }
 
-std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image) {
-    return std::make_tuple(0.0f, 0.0f);
-}
-
+std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base_speed, float max_gain_ratio) {
 // ==================== 帧处理 ====================
-void process_frame(const cv::Mat& image) {
     // static 状态机变量
     static RingStatus s_ring_status = RingStatus::NotFound;
     static RingType s_ring_type = RingType::None;
@@ -466,11 +462,28 @@ void process_frame(const cv::Mat& image) {
         }
 
         cv::Point legacy_target, folded_target;
+        float left_speed = base_speed;
+        float right_speed = base_speed;
         if (select_folded_target_point(skeleton_result, img_width, img_height, skel_result,
                                        s_ring_status, s_ring_type, legacy_target, folded_target)) {
             cv::circle(result_img, legacy_target, 5, purple, -1);
             cv::circle(result_img, folded_target, 5, yellow, -1);
-            cv::putText(result_img, "F", cv::Point(folded_target.x + 4, folded_target.y - 4),
+
+            cv::Point start_center(
+                (skel_result.left_start_x + skel_result.right_start_x) / 2,
+                (skel_result.left_start_y + skel_result.right_start_y) / 2
+            );
+            Point line[2] = {
+                Point(start_center.x, start_center.y),
+                Point(folded_target.x, folded_target.y)
+            };
+            auto [ls, rs] = calculate_wheel_speeds(line, 2, base_speed, max_gain_ratio);
+            left_speed = ls;
+            right_speed = rs;
+
+            char speed_text[32];
+            snprintf(speed_text, sizeof(speed_text), "l:%.1f|r:%.1f", left_speed, right_speed);
+            cv::putText(result_img, speed_text, cv::Point(folded_target.x + 4, folded_target.y - 4),
                 cv::FONT_HERSHEY_SIMPLEX, 0.3, yellow, 1);
         }
 
@@ -561,8 +574,15 @@ void process_frame(const cv::Mat& image) {
                               resized, skeleton_img, result_img, img_width, img_height);
         }
 
+        cv::Mat result_display, skeleton_display;
+        cv::resize(result_img, result_display, cv::Size(400, 300));
+        cv::resize(skeleton_img, skeleton_display, cv::Size(400, 300));
+        cv::imshow("Result", result_display);
+        cv::imshow("Skeleton", skeleton_display);
+
+        return std::make_tuple(left_speed, right_speed);
+
     } else {
-        // 无轮廓分支
         switch (s_ring_status) {
             case RingStatus::NotFound:
                 s_ring_detect_count = 0;
@@ -596,13 +616,15 @@ void process_frame(const cv::Mat& image) {
             save_debug_images(ring_status_name(s_ring_status), frame_number,
                               resized, skeleton_img, result_img, img_width, img_height);
         }
-    }
 
-    cv::Mat result_display, skeleton_display;
-    cv::resize(result_img, result_display, cv::Size(400, 300));
-    cv::resize(skeleton_img, skeleton_display, cv::Size(400, 300));
-    cv::imshow("Result", result_display);
-    cv::imshow("Skeleton", skeleton_display);
+        cv::Mat result_display, skeleton_display;
+        cv::resize(result_img, result_display, cv::Size(400, 300));
+        cv::resize(skeleton_img, skeleton_display, cv::Size(400, 300));
+        cv::imshow("Result", result_display);
+        cv::imshow("Skeleton", skeleton_display);
+
+        return std::make_tuple(base_speed, base_speed);
+    }
 }
 
 } // namespace find_line_lib

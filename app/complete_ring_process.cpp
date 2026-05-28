@@ -35,7 +35,7 @@ int main() {
     int current_idx = 0;
 
     while (current_idx < frame_count) {
-        find_line_lib::process_frame(frame_cache[current_idx]);
+        find_line_lib::calculate_wheel_speeds(frame_cache[current_idx]);
 
         int wait_time = is_playing ? 1 : 0;
         char key = cv::waitKey(wait_time) & 0xFF;
