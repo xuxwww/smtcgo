@@ -1,9 +1,253 @@
+#include "find_line_lib/common.h"
 #include "find_line_lib/calculate_wheel_speeds.h"
+#include "skeleton.h"
+#include "video_skeleton_process.h"
+#include "find_line_lib/get_start_point.h"
+
+#include <opencv2/opencv.hpp>
 
 #include <cmath>
 #include <tuple>
+#include <cstring>
+#include <vector>
+#include <queue>
+#include <limits>
+#include <algorithm>
+#include <filesystem>
+#include <string>
 
 namespace find_line_lib {
+
+// ==================== 匿名命名空间：辅助函数 ====================
+namespace 
+{
+
+const char* ring_status_name(RingStatus status) {
+    return status == RingStatus::NotFound ? "未发现" :
+           status == RingStatus::Discovered ? "已发现" :
+           status == RingStatus::PrepareEnter ? "准备入环" :
+           status == RingStatus::PrepareExit ? "准备出环" :
+           status == RingStatus::AboutToExit ? "即将出环" : "出环中";
+}
+
+const char* ring_type_name(RingType type) {
+    return type == RingType::None ? "无" :
+           type == RingType::Left ? "左" : "右";
+}
+
+bool choose_legacy_target_endpoint(const cv_boost::SkeletonAnalysisResult& skel_result,
+                                   RingStatus status,
+                                   RingType type,
+                                   int width, int height,
+                                   cv::Point& target_pt) {
+    if (skel_result.endpoint_points.empty()) return false;
+
+    if (status == RingStatus::NotFound ||
+        status == RingStatus::Discovered ||
+        status == RingStatus::Exiting) {
+        int min_y = height;
+        for (auto& p : skel_result.endpoint_points) {
+            int x = std::get<0>(p);
+            int y = std::get<1>(p);
+            if (y < min_y) { min_y = y; target_pt = cv::Point(x, y); }
+        }
+        return true;
+    }
+
+    if (status == RingStatus::PrepareEnter || status == RingStatus::AboutToExit) {
+        if (type == RingType::Left) {
+            int min_x = width;
+            for (auto& p : skel_result.endpoint_points) {
+                int x = std::get<0>(p);
+                int y = std::get<1>(p);
+                if (x < min_x) { min_x = x; target_pt = cv::Point(x, y); }
+            }
+        } else {
+            int max_x = -1;
+            for (auto& p : skel_result.endpoint_points) {
+                int x = std::get<0>(p);
+                int y = std::get<1>(p);
+                if (x > max_x) { max_x = x; target_pt = cv::Point(x, y); }
+            }
+        }
+        return true;
+    }
+
+    if (status == RingStatus::PrepareExit && skel_result.endpoint_points.size() == 1) {
+        auto& p = skel_result.endpoint_points[0];
+        target_pt = cv::Point(std::get<0>(p), std::get<1>(p));
+        return true;
+    }
+
+    return false;
+}
+
+bool nearest_skeleton_point(const uint8_t* skeleton, int width, int height,
+                            cv::Point seed, cv::Point& nearest) {
+    int best_dist = std::numeric_limits<int>::max();
+    bool found = false;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            if (skeleton[y * width + x] == 0) continue;
+            int dx = x - seed.x;
+            int dy = y - seed.y;
+            int dist = dx * dx + dy * dy;
+            if (dist < best_dist) { best_dist = dist; nearest = cv::Point(x, y); found = true; }
+        }
+    }
+    return found;
+}
+
+bool find_skeleton_path(const uint8_t* skeleton, int width, int height,
+                        cv::Point start, cv::Point target,
+                        std::vector<cv::Point>& path) {
+    path.clear();
+    if (start.x < 0 || start.x >= width || start.y < 0 || start.y >= height ||
+        target.x < 0 || target.x >= width || target.y < 0 || target.y >= height)
+        return false;
+    if (skeleton[start.y * width + start.x] == 0 || skeleton[target.y * width + target.x] == 0)
+        return false;
+
+    const int total = width * height;
+    std::vector<int> parent(total, -1);
+    std::vector<uint8_t> visited(total, 0);
+    std::queue<int> q;
+
+    int start_idx = start.y * width + start.x;
+    int target_idx = target.y * width + target.x;
+    visited[start_idx] = 1;
+    q.push(start_idx);
+
+    const int dirs[8][2] = {{-1,-1},{0,-1},{1,-1},{-1,0},{1,0},{-1,1},{0,1},{1,1}};
+
+    while (!q.empty()) {
+        int idx = q.front(); q.pop();
+        if (idx == target_idx) break;
+        int x = idx % width;
+        int y = idx / width;
+        for (auto& dir : dirs) {
+            int nx = x + dir[0], ny = y + dir[1];
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+            int nidx = ny * width + nx;
+            if (visited[nidx] || skeleton[nidx] == 0) continue;
+            visited[nidx] = 1;
+            parent[nidx] = idx;
+            q.push(nidx);
+        }
+    }
+
+    if (!visited[target_idx]) return false;
+    for (int idx = target_idx; idx != -1; idx = parent[idx]) {
+        path.push_back(cv::Point(idx % width, idx / width));
+        if (idx == start_idx) break;
+    }
+    std::reverse(path.begin(), path.end());
+    return !path.empty() && path.front() == start && path.back() == target;
+}
+
+double segment_length(cv::Point a, cv::Point b) {
+    int dx = a.x - b.x, dy = a.y - b.y;
+    return std::sqrt(static_cast<double>(dx * dx + dy * dy));
+}
+
+double polyline_length(const std::vector<cv::Point>& path) {
+    double length = 0.0;
+    for (size_t i = 1; i < path.size(); ++i)
+        length += segment_length(path[i - 1], path[i]);
+    return length;
+}
+
+cv::Point point_at_distance(const std::vector<cv::Point>& path, double distance) {
+    if (path.empty()) return cv::Point(0, 0);
+    if (path.size() == 1 || distance <= 0.0) return path.front();
+    double walked = 0.0;
+    for (size_t i = 1; i < path.size(); ++i) {
+        double seg_len = segment_length(path[i - 1], path[i]);
+        if (walked + seg_len >= distance) {
+            double t = seg_len > 0.0 ? (distance - walked) / seg_len : 0.0;
+            int x = static_cast<int>(std::round(path[i-1].x + (path[i].x - path[i-1].x) * t));
+            int y = static_cast<int>(std::round(path[i-1].y + (path[i].y - path[i-1].y) * t));
+            return cv::Point(x, y);
+        }
+        walked += seg_len;
+    }
+    return path.back();
+}
+
+bool select_folded_target_point(const uint8_t* skeleton, int width, int height,
+                                const cv_boost::SkeletonAnalysisResult& skel_result,
+                                RingStatus status, RingType type,
+                                cv::Point& legacy_target, cv::Point& folded_target) {
+    if (!choose_legacy_target_endpoint(skel_result, status, type, width, height, legacy_target))
+        return false;
+
+    folded_target = legacy_target;
+
+    bool has_left = skel_result.left_start_x > 0 || skel_result.left_start_y > 0;
+    bool has_right = skel_result.right_start_x > 0 || skel_result.right_start_y > 0;
+    if (!has_left || !has_right) return true;
+
+    cv::Point left_start(skel_result.left_start_x, skel_result.left_start_y);
+    cv::Point right_start(skel_result.right_start_x, skel_result.right_start_y);
+    cv::Point start_center((left_start.x + right_start.x) / 2,
+                           (left_start.y + right_start.y) / 2);
+
+    cv::Point left_skel, right_skel;
+    std::vector<cv::Point> left_path, right_path;
+    if (nearest_skeleton_point(skeleton, width, height, left_start, left_skel) &&
+        nearest_skeleton_point(skeleton, width, height, right_start, right_skel) &&
+        find_skeleton_path(skeleton, width, height, left_skel, legacy_target, left_path) &&
+        find_skeleton_path(skeleton, width, height, right_skel, legacy_target, right_path)) {
+        int li = static_cast<int>(left_path.size()) - 1;
+        int ri = static_cast<int>(right_path.size()) - 1;
+        while (li >= 0 && ri >= 0 && left_path[li] == right_path[ri]) { --li; --ri; }
+        int merge_index = li + 1;
+        int common_len = static_cast<int>(left_path.size()) - merge_index;
+        if (merge_index >= 0 && merge_index < static_cast<int>(left_path.size()) && common_len >= 3) {
+            std::vector<cv::Point> virtual_path;
+            virtual_path.push_back(start_center);
+            for (size_t i = static_cast<size_t>(merge_index); i < left_path.size(); ++i)
+                virtual_path.push_back(left_path[i]);
+            double total_length = polyline_length(virtual_path);
+            folded_target = point_at_distance(virtual_path, total_length * 0.5);
+            return true;
+        }
+    }
+
+    cv::Point center_skel;
+    std::vector<cv::Point> center_path;
+    if (nearest_skeleton_point(skeleton, width, height, start_center, center_skel) &&
+        find_skeleton_path(skeleton, width, height, center_skel, legacy_target, center_path)) {
+        center_path.insert(center_path.begin(), start_center);
+        double total_length = polyline_length(center_path);
+        folded_target = point_at_distance(center_path, total_length * 0.5);
+    }
+    return true;
+}
+
+void create_debug_directories() {
+    std::filesystem::create_directories("debug_frames/未发现");
+    std::filesystem::create_directories("debug_frames/发现圆坏");
+    std::filesystem::create_directories("debug_frames/已发现");
+    std::filesystem::create_directories("debug_frames/准备入环");
+    std::filesystem::create_directories("debug_frames/准备出环");
+    std::filesystem::create_directories("debug_frames/即将出环");
+    std::filesystem::create_directories("debug_frames/出环中");
+}
+
+void save_debug_images(const char* status, int frame_number,
+                       const cv::Mat& original, const cv::Mat& skeleton,
+                       const cv::Mat& result, int width, int height) {
+    char path[512];
+    snprintf(path, sizeof(path), "debug_frames/%s/frame_%04d_原图.png", status, frame_number);
+    cv::imwrite(path, original);
+    snprintf(path, sizeof(path), "debug_frames/%s/frame_%04d_骨架.png", status, frame_number);
+    cv::imwrite(path, skeleton);
+    snprintf(path, sizeof(path), "debug_frames/%s/frame_%04d_结果.png", status, frame_number);
+    cv::imwrite(path, result);
+}
+
+} // anonymous namespace
 
 // ==================== 轮速计算实现 ====================
 // 核心算法：基于中线斜率的差速控制
@@ -74,4 +318,291 @@ std::tuple<float, float> calculate_wheel_speeds(const Point* line, int line_size
     return std::make_tuple(left_speed, right_speed);
 }
 
+std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image) {
+    return std::make_tuple(0.0f, 0.0f);
 }
+
+// ==================== 帧处理 ====================
+void process_frame(const cv::Mat& image) {
+    // static 状态机变量
+    static RingStatus s_ring_status = RingStatus::NotFound;
+    static RingType s_ring_type = RingType::None;
+    static int s_ring_detect_count = 0;
+    static int s_ring_disappear_count = 0;
+    static int s_single_path_count = 0;
+    static int s_dual_path_count = 0;
+    static int s_frame_number = 0;
+    static bool s_debug_dirs_created = false;
+    static bool s_windows_created = false;
+
+    if (!s_debug_dirs_created) { create_debug_directories(); s_debug_dirs_created = true; }
+    if (!s_windows_created) {
+        cv::namedWindow("Skeleton", cv::WINDOW_NORMAL);
+        cv::resizeWindow("Skeleton", 400, 300);
+        cv::namedWindow("Result", cv::WINDOW_NORMAL);
+        cv::resizeWindow("Result", 400, 300);
+        s_windows_created = true;
+    }
+    ++s_frame_number;
+    int frame_number = s_frame_number;
+    constexpr int confirm_threshold = 20;
+    constexpr int img_width = 160;
+    constexpr int img_height = 120;
+
+    // 图像预处理
+    cv::Mat resized;
+    cv::resize(image, resized, cv::Size(img_width, img_height));
+
+    cv::Mat gray;
+    cv::cvtColor(resized, gray, cv::COLOR_BGR2GRAY);
+
+    cv::Mat blurred;
+    cv::GaussianBlur(gray, blurred, cv::Size(3, 3), 0);
+
+    cv::Mat binary;
+    cv::threshold(blurred, binary, 127, 255, cv::THRESH_BINARY);
+
+    cv::Mat element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+    cv::Mat eroded;
+    cv::erode(binary, eroded, element, cv::Point(-1, -1), 2);
+    cv::Mat dilated;
+    cv::dilate(eroded, dilated, element, cv::Point(-1, -1), 1);
+
+    // 轮廓检测
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(dilated, contours, cv::noArray(), cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
+
+    cv::Mat result_img = resized.clone();
+    cv::Mat skeleton_img = cv::Mat::zeros(img_height, img_width, CV_8UC1);
+    int best_contour_index = -1;
+    int min_area = img_width * img_height * 10 / 100;
+
+    // get_start_point 获取 L/R 起点
+    uint8_t full_binary[img_height * img_width];
+    for (int y = 0; y < img_height; ++y)
+        for (int x = 0; x < img_width; ++x)
+            full_binary[y * img_width + x] = dilated.at<uint8_t>(y, x);
+
+    int ref_center_x = img_width / 2;
+    auto start_result = get_start_point(
+        full_binary, img_width, img_height,
+        &Point(img_width / 2, img_height - 1),
+        1, img_width - 1, 1, img_height - 1, "horizontal");
+    if (start_result != nullptr) {
+        auto& left_pt = std::get<0>(*start_result);
+        auto& right_pt = std::get<1>(*start_result);
+        ref_center_x = (left_pt.x + right_pt.x) / 2;
+    }
+
+    // 筛选最底部居中轮廓
+    int best_dist = img_width;
+    for (size_t i = 0; i < contours.size(); ++i) {
+        double area = cv::contourArea(contours[i]);
+        if (area < min_area) continue;
+        cv::Rect bounding = cv::boundingRect(contours[i]);
+        int bottom_y = bounding.y + bounding.height;
+        if (bottom_y < img_height - 2) continue;
+        int contour_center_x = bounding.x + bounding.width / 2;
+        int dist = std::abs(contour_center_x - ref_center_x);
+        if (dist < best_dist) { best_dist = dist; best_contour_index = static_cast<int>(i); }
+    }
+
+    if (best_contour_index >= 0) {
+        cv::drawContours(result_img, contours, best_contour_index, cv::Scalar(0, 255, 0), 2);
+
+        cv::Mat road_mask = cv::Mat::zeros(img_height, img_width, CV_8UC1);
+        cv::drawContours(road_mask, contours, best_contour_index, cv::Scalar(255), -1);
+
+        cv::Mat road_area;
+        cv::bitwise_and(dilated, dilated, road_area, road_mask);
+
+        uint8_t road_binary[img_height * img_width];
+        for (int y = 0; y < img_height; ++y)
+            for (int x = 0; x < img_width; ++x)
+                road_binary[y * img_width + x] = road_area.at<uint8_t>(y, x);
+
+        uint8_t skeleton_result[img_height * img_width];
+        cv_boost::skeletonize(road_binary, skeleton_result, img_width, img_height);
+
+        skeleton_img = cv::Mat(img_height, img_width, CV_8UC1, skeleton_result).clone();
+
+        uint8_t binary_for_start[img_height * img_width];
+        for (int y = 0; y < img_height; ++y)
+            for (int x = 0; x < img_width; ++x)
+                binary_for_start[y * img_width + x] = dilated.at<uint8_t>(y, x);
+
+        auto skel_result = cv_boost::analyze_skeleton(skeleton_result, img_width, img_height, binary_for_start);
+
+        // 绘制特征点
+        cv::Scalar blue(255, 0, 0), red(0, 0, 255), green(0, 255, 0);
+        cv::Scalar cyan(255, 255, 0), purple(255, 0, 255), yellow(0, 255, 255);
+
+        for (auto& p : skel_result.endpoint_points)
+            cv::circle(result_img, cv::Point(std::get<0>(p), std::get<1>(p)), 3, blue, -1);
+        for (auto& p : skel_result.bifurcation_points)
+            cv::circle(result_img, cv::Point(std::get<0>(p), std::get<1>(p)), 5, red, -1);
+
+        if (skel_result.left_start_x > 0 || skel_result.left_start_y > 0) {
+            cv::circle(result_img, cv::Point(skel_result.left_start_x, skel_result.left_start_y), 4, cyan, -1);
+            cv::putText(result_img, "L",
+                cv::Point(skel_result.left_start_x - 5, skel_result.left_start_y - 8),
+                cv::FONT_HERSHEY_SIMPLEX, 0.3, cyan, 1);
+        }
+        if (skel_result.right_start_x > 0 || skel_result.right_start_y > 0) {
+            cv::circle(result_img, cv::Point(skel_result.right_start_x, skel_result.right_start_y), 4, cyan, -1);
+            cv::putText(result_img, "R",
+                cv::Point(skel_result.right_start_x - 5, skel_result.right_start_y - 8),
+                cv::FONT_HERSHEY_SIMPLEX, 0.3, cyan, 1);
+        }
+
+        auto ring_result = cv_boost::detect_ring(skeleton_result, img_width, img_height);
+
+        if (ring_result.has_ring) {
+            cv::circle(result_img, cv::Point(ring_result.ring_center_x, 60), 20, green, 2);
+            std::string ring_text = "RING " + std::string(1, ring_result.ring_side);
+            cv::putText(result_img, ring_text,
+                cv::Point(ring_result.ring_center_x - 20, 50),
+                cv::FONT_HERSHEY_SIMPLEX, 0.4, green, 1);
+        }
+
+        cv::Point legacy_target, folded_target;
+        if (select_folded_target_point(skeleton_result, img_width, img_height, skel_result,
+                                       s_ring_status, s_ring_type, legacy_target, folded_target)) {
+            cv::circle(result_img, legacy_target, 5, purple, -1);
+            cv::circle(result_img, folded_target, 5, yellow, -1);
+            cv::putText(result_img, "F", cv::Point(folded_target.x + 4, folded_target.y - 4),
+                cv::FONT_HERSHEY_SIMPLEX, 0.3, yellow, 1);
+        }
+
+        bool has_ring = ring_result.has_ring;
+        int branch_count = skel_result.branch_count;
+        int endpoint_count = skel_result.endpoint_count;
+
+        // 状态机转移
+        switch (s_ring_status) {
+            case RingStatus::NotFound:
+                if (has_ring) {
+                    s_ring_detect_count++;
+                    s_ring_disappear_count = 0;
+                    if (s_ring_detect_count >= confirm_threshold) {
+                        s_ring_status = RingStatus::Discovered;
+                        s_ring_type = (ring_result.ring_side == 'l') ? RingType::Left : RingType::Right;
+                        s_ring_detect_count = 0;
+                        printf("[帧 %d] 未发现 -> 已发现 (%s圆环)\n", frame_number,
+                               s_ring_type == RingType::Left ? "左" : "右");
+                    }
+                } else { s_ring_detect_count = 0; }
+                break;
+            case RingStatus::Discovered:
+                if (!has_ring) {
+                    s_ring_disappear_count++;
+                    s_ring_detect_count = 0;
+                    if (s_ring_disappear_count >= confirm_threshold) {
+                        s_ring_status = RingStatus::PrepareEnter;
+                        s_ring_disappear_count = 0;
+                        printf("[帧 %d] 已发现 -> 准备入环\n", frame_number);
+                    }
+                } else {
+                    s_ring_disappear_count = 0;
+                    s_ring_type = (ring_result.ring_side == 'l') ? RingType::Left : RingType::Right;
+                }
+                break;
+            case RingStatus::PrepareEnter:
+                if (branch_count == 1 && endpoint_count == 1) {
+                    s_single_path_count++; s_dual_path_count = 0;
+                    if (s_single_path_count >= confirm_threshold) {
+                        s_ring_status = RingStatus::PrepareExit;
+                        s_single_path_count = 0;
+                        printf("[帧 %d] 准备入环 -> 准备出环\n", frame_number);
+                    }
+                } else { s_single_path_count = 0; }
+                break;
+            case RingStatus::PrepareExit:
+                if (endpoint_count >= 2) {
+                    s_dual_path_count++; s_single_path_count = 0;
+                    if (s_dual_path_count >= confirm_threshold) {
+                        s_ring_status = RingStatus::AboutToExit;
+                        s_dual_path_count = 0;
+                        printf("[帧 %d] 准备出环 -> 即将出环\n", frame_number);
+                    }
+                } else { s_dual_path_count = 0; }
+                break;
+            case RingStatus::AboutToExit:
+                if (branch_count == 1 && endpoint_count == 1) {
+                    s_single_path_count++; s_dual_path_count = 0;
+                    if (s_single_path_count >= confirm_threshold) {
+                        s_ring_status = RingStatus::Exiting;
+                        s_ring_type = RingType::None;
+                        s_single_path_count = 0;
+                        printf("[帧 %d] 即将出环 -> 出环中\n", frame_number);
+                    }
+                } else { s_single_path_count = 0; }
+                break;
+            case RingStatus::Exiting:
+                if (endpoint_count > 1) {
+                    s_single_path_count++; s_dual_path_count = 0;
+                    if (s_single_path_count >= confirm_threshold) {
+                        s_ring_status = RingStatus::NotFound;
+                        s_ring_type = RingType::None;
+                        s_single_path_count = 0;
+                        printf("[帧 %d] 出环中 -> 未发现\n", frame_number);
+                    }
+                } else { s_single_path_count = 0; }
+                break;
+        }
+
+        if (frame_number % 20 == 0) {
+            printf("[帧 %d] 状态=%s 圆坏类型=%s 分支=%d 端点=%d 有环=%d 环位置=%d\n",
+                   frame_number, ring_status_name(s_ring_status), ring_type_name(s_ring_type),
+                   branch_count, endpoint_count, has_ring ? 1 : 0, ring_result.ring_center_x);
+        }
+        if (frame_number % 10 == 0) {
+            save_debug_images(ring_status_name(s_ring_status), frame_number,
+                              resized, skeleton_img, result_img, img_width, img_height);
+        }
+
+    } else {
+        // 无轮廓分支
+        switch (s_ring_status) {
+            case RingStatus::NotFound:
+                s_ring_detect_count = 0;
+                break;
+            case RingStatus::Discovered:
+                s_ring_disappear_count++;
+                s_ring_detect_count = 0;
+                if (s_ring_disappear_count >= confirm_threshold) {
+                    s_ring_status = RingStatus::PrepareEnter;
+                    s_ring_disappear_count = 0;
+                    printf("[帧 %d] 已发现 -> 准备入环\n", frame_number);
+                }
+                break;
+            case RingStatus::PrepareEnter:
+            case RingStatus::AboutToExit:
+                s_single_path_count = 0;
+                break;
+            case RingStatus::PrepareExit:
+                s_dual_path_count = 0;
+                break;
+            case RingStatus::Exiting:
+                s_single_path_count = 0;
+                break;
+        }
+        if (frame_number % 20 == 0) {
+            printf("[帧 %d] 状态=%s 圆坏类型=%s 分支=%d 端点=%d 有环=%d 环位置=%d\n",
+                   frame_number, ring_status_name(s_ring_status), ring_type_name(s_ring_type),
+                   0, 0, 0, 0);
+        }
+        if (frame_number % 10 == 0) {
+            save_debug_images(ring_status_name(s_ring_status), frame_number,
+                              resized, skeleton_img, result_img, img_width, img_height);
+        }
+    }
+
+    cv::Mat result_display, skeleton_display;
+    cv::resize(result_img, result_display, cv::Size(400, 300));
+    cv::resize(skeleton_img, skeleton_display, cv::Size(400, 300));
+    cv::imshow("Result", result_display);
+    cv::imshow("Skeleton", skeleton_display);
+}
+
+} // namespace find_line_lib
