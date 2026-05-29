@@ -104,15 +104,15 @@ std::tuple<Point, Point>* prepare_enter_ring(const uint8_t* bin_img, int width, 
 
         // 检测到宽度突然增加
         if (curr_width - prev_width > jump_threshold) {
-            // 打印调试信息
-            printf("线长变化：%d\n", curr_width - prev_width);
-
             // 计算前后两行的中心点
             Point prev_center((lp_prev.x + rp_prev.x) / 2, (lp_prev.y + rp_prev.y) / 2);
             Point curr_center((lp_curr.x + rp_curr.x) / 2, (lp_curr.y + rp_curr.y) / 2);
 
+#ifdef SMTC2GO_DEBUG
+            printf("线长变化：%d\n", curr_width - prev_width);
             printf("突变前中点: (%d, %d), 突变后中点: (%d, %d)\n",
                    prev_center.x, prev_center.y, curr_center.x, curr_center.y);
+#endif
 
             // 根据中心点偏移方向判断左右
             if (prev_center.x - curr_center.x > center_distance_threshold) {
@@ -120,7 +120,9 @@ std::tuple<Point, Point>* prepare_enter_ring(const uint8_t* bin_img, int width, 
                 if (ss->ring_type == RingType::Left) {
                     return &line_length_points_buffer[i - 1];
                 } else {
+#ifdef SMTC2GO_DEBUG
                     printf("实际检测到的圆坏类型是左，不是% d\n", static_cast<int>(ss->ring_type));
+#endif
                     return &line_length_points_buffer[i - 1];
                 }
             } else if (prev_center.x - curr_center.x < -center_distance_threshold) {
@@ -128,17 +130,23 @@ std::tuple<Point, Point>* prepare_enter_ring(const uint8_t* bin_img, int width, 
                 if (ss->ring_type == RingType::Right) {
                     return &line_length_points_buffer[i - 1];
                 } else {
+#ifdef SMTC2GO_DEBUG
                     printf("实际检测到的圆坏类型是右，不是%d\n", static_cast<int>(ss->ring_type));
+#endif
                     return &line_length_points_buffer[i - 1];
                 }
             } else {
+#ifdef SMTC2GO_DEBUG
                 printf("突变过小，可能是十字\n");
+#endif
                 return nullptr;
             }
         }
     }
 
+#ifdef SMTC2GO_DEBUG
     printf("线长变化不满足跳变阈值\n");
+#endif
     return nullptr;
 }
 
@@ -182,24 +190,22 @@ std::tuple<Point, Point>* prepare_exit_ring(const uint8_t* bin_img, int width, i
         int curr_width = rp_curr.x - lp_curr.x;
 
         if (curr_width - prev_width > jump_threshold) {
-            printf("线长变化：%d\n", curr_width - prev_width);
-
             Point prev_center((lp_prev.x + rp_prev.x) / 2, (lp_prev.y + rp_prev.y) / 2);
             Point curr_center((lp_curr.x + rp_curr.x) / 2, (lp_curr.y + rp_curr.y) / 2);
 
+#ifdef SMTC2GO_DEBUG
+            printf("线长变化：%d\n", curr_width - prev_width);
             printf("突变前中点: (%d, %d), 突变后中点: (%d, %d)\n",
                    prev_center.x, prev_center.y, curr_center.x, curr_center.y);
 
-            // ==================== 调试窗口 ====================
-            // Python 代码：
-            //   cv2.line(bin_img, 突变前中点, 突变后中点, 0, 2)
-            //   cv2.imshow('debug', bin_img)
-            //   cv2.waitKey(0)
             cv::Mat debug_img(height, width, CV_8UC1, const_cast<uint8_t*>(bin_img));
             cv::line(debug_img, cv::Point(prev_center.x, prev_center.y),
                      cv::Point(curr_center.x, curr_center.y), cv::Scalar(0), 2);
+#ifdef SMTC2GO_DEBUG_IMSHOW
             cv::imshow("debug", debug_img);
             cv::waitKey(0);
+#endif
+#endif
 
             // 根据中心点偏移方向判断出口位置
             if (prev_center.x - curr_center.x > center_distance_threshold) {
@@ -207,7 +213,9 @@ std::tuple<Point, Point>* prepare_exit_ring(const uint8_t* bin_img, int width, i
                 if (ss->ring_type == RingType::Left) {
                     return &line_length_points_buffer[i];
                 } else {
+#ifdef SMTC2GO_DEBUG
                     printf("实际检测到的圆坏类型是右，不是%d\n", static_cast<int>(ss->ring_type));
+#endif
                     return &line_length_points_buffer[i];
                 }
             } else if (prev_center.x - curr_center.x < -center_distance_threshold) {
@@ -215,11 +223,15 @@ std::tuple<Point, Point>* prepare_exit_ring(const uint8_t* bin_img, int width, i
                 if (ss->ring_type == RingType::Right) {
                     return &line_length_points_buffer[i];
                 } else {
+#ifdef SMTC2GO_DEBUG
                     printf("实际检测到的圆坏类型是左，不是%d\n", static_cast<int>(ss->ring_type));
+#endif
                     return &line_length_points_buffer[i];
                 }
             } else {
+#ifdef SMTC2GO_DEBUG
                 printf("突变过小，可能是十字\n");
+#endif
                 return nullptr;
             }
         }

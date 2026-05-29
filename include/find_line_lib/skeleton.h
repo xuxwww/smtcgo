@@ -6,7 +6,7 @@
 
 constexpr int MAX_PIXELS = 640 * 480;  // 最大图像尺寸
 
-namespace cv_boost {
+namespace find_line_lib {
 
 // ==================== 骨架分析结果 ====================
 // 描述一条路径的分支结构

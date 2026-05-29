@@ -1,7 +1,6 @@
 #include "find_line_lib/common.h"
 #include "find_line_lib/calculate_wheel_speeds.h"
-#include "skeleton.h"
-#include "video_skeleton_process.h"
+#include "find_line_lib/skeleton.h"
 #include "find_line_lib/get_start_point.h"
 
 #include <opencv2/opencv.hpp>
@@ -13,8 +12,11 @@
 #include <queue>
 #include <limits>
 #include <algorithm>
+
+#ifdef SMTC2GO_DEBUG
 #include <filesystem>
 #include <string>
+#endif
 
 namespace find_line_lib {
 
@@ -22,6 +24,7 @@ namespace find_line_lib {
 namespace
 {
 
+#ifdef SMTC2GO_DEBUG
 const char* ring_status_name(RingStatus status) {
     return status == RingStatus::NotFound ? "未发现" :
            status == RingStatus::Discovered ? "已发现" :
@@ -35,7 +38,30 @@ const char* ring_type_name(RingType type) {
            type == RingType::Left ? "左" : "右";
 }
 
-bool choose_legacy_target_endpoint(const cv_boost::SkeletonAnalysisResult& skel_result,
+void create_debug_directories() {
+    std::filesystem::create_directories("debug_frames/未发现");
+    std::filesystem::create_directories("debug_frames/发现圆坏");
+    std::filesystem::create_directories("debug_frames/已发现");
+    std::filesystem::create_directories("debug_frames/准备入环");
+    std::filesystem::create_directories("debug_frames/准备出环");
+    std::filesystem::create_directories("debug_frames/即将出环");
+    std::filesystem::create_directories("debug_frames/出环中");
+}
+
+void save_debug_images(const char* status, int frame_number,
+                       const cv::Mat& original, const cv::Mat& skeleton,
+                       const cv::Mat& result, int width, int height) {
+    char path[512];
+    snprintf(path, sizeof(path), "debug_frames/%s/frame_%04d_原图.png", status, frame_number);
+    cv::imwrite(path, original);
+    snprintf(path, sizeof(path), "debug_frames/%s/frame_%04d_骨架.png", status, frame_number);
+    cv::imwrite(path, skeleton);
+    snprintf(path, sizeof(path), "debug_frames/%s/frame_%04d_结果.png", status, frame_number);
+    cv::imwrite(path, result);
+}
+#endif
+
+bool choose_legacy_target_endpoint(const SkeletonAnalysisResult& skel_result,
                                    RingStatus status,
                                    RingType type,
                                    int width, int height,
@@ -175,7 +201,7 @@ cv::Point point_at_distance(const std::vector<cv::Point>& path, double distance)
 }
 
 bool select_folded_target_point(const uint8_t* skeleton, int width, int height,
-                                const cv_boost::SkeletonAnalysisResult& skel_result,
+                                const SkeletonAnalysisResult& skel_result,
                                 RingStatus status, RingType type,
                                 cv::Point& legacy_target, cv::Point& folded_target) {
     if (!choose_legacy_target_endpoint(skel_result, status, type, width, height, legacy_target))
@@ -223,28 +249,6 @@ bool select_folded_target_point(const uint8_t* skeleton, int width, int height,
         folded_target = point_at_distance(center_path, total_length * 0.5);
     }
     return true;
-}
-
-void create_debug_directories() {
-    std::filesystem::create_directories("debug_frames/未发现");
-    std::filesystem::create_directories("debug_frames/发现圆坏");
-    std::filesystem::create_directories("debug_frames/已发现");
-    std::filesystem::create_directories("debug_frames/准备入环");
-    std::filesystem::create_directories("debug_frames/准备出环");
-    std::filesystem::create_directories("debug_frames/即将出环");
-    std::filesystem::create_directories("debug_frames/出环中");
-}
-
-void save_debug_images(const char* status, int frame_number,
-                       const cv::Mat& original, const cv::Mat& skeleton,
-                       const cv::Mat& result, int width, int height) {
-    char path[512];
-    snprintf(path, sizeof(path), "debug_frames/%s/frame_%04d_原图.png", status, frame_number);
-    cv::imwrite(path, original);
-    snprintf(path, sizeof(path), "debug_frames/%s/frame_%04d_骨架.png", status, frame_number);
-    cv::imwrite(path, skeleton);
-    snprintf(path, sizeof(path), "debug_frames/%s/frame_%04d_结果.png", status, frame_number);
-    cv::imwrite(path, result);
 }
 
 } // anonymous namespace
@@ -328,9 +332,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
     static int s_single_path_count = 0;
     static int s_dual_path_count = 0;
     static int s_frame_number = 0;
+#ifdef SMTC2GO_DEBUG
     static bool s_debug_dirs_created = false;
     static bool s_windows_created = false;
-
     if (!s_debug_dirs_created) { create_debug_directories(); s_debug_dirs_created = true; }
     if (!s_windows_created) {
         cv::namedWindow("Skeleton", cv::WINDOW_NORMAL);
@@ -339,6 +343,7 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
         cv::resizeWindow("Result", 400, 300);
         s_windows_created = true;
     }
+#endif
     ++s_frame_number;
     int frame_number = s_frame_number;
     constexpr int confirm_threshold = 20;
@@ -368,8 +373,10 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(dilated, contours, cv::noArray(), cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
 
+#ifdef SMTC2GO_DEBUG
     cv::Mat result_img = resized.clone();
     cv::Mat skeleton_img = cv::Mat::zeros(img_height, img_width, CV_8UC1);
+#endif
     int best_contour_index = -1;
     int min_area = img_width * img_height * 10 / 100;
 
@@ -404,7 +411,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
     }
 
     if (best_contour_index >= 0) {
+#ifdef SMTC2GO_DEBUG
         cv::drawContours(result_img, contours, best_contour_index, cv::Scalar(0, 255, 0), 2);
+#endif
 
         cv::Mat road_mask = cv::Mat::zeros(img_height, img_width, CV_8UC1);
         cv::drawContours(road_mask, contours, best_contour_index, cv::Scalar(255), -1);
@@ -418,17 +427,20 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                 road_binary[y * img_width + x] = road_area.at<uint8_t>(y, x);
 
         uint8_t skeleton_result[img_height * img_width];
-        cv_boost::skeletonize(road_binary, skeleton_result, img_width, img_height);
+        skeletonize(road_binary, skeleton_result, img_width, img_height);
 
+#ifdef SMTC2GO_DEBUG
         skeleton_img = cv::Mat(img_height, img_width, CV_8UC1, skeleton_result).clone();
+#endif
 
         uint8_t binary_for_start[img_height * img_width];
         for (int y = 0; y < img_height; ++y)
             for (int x = 0; x < img_width; ++x)
                 binary_for_start[y * img_width + x] = dilated.at<uint8_t>(y, x);
 
-        auto skel_result = cv_boost::analyze_skeleton(skeleton_result, img_width, img_height, binary_for_start);
+        auto skel_result = analyze_skeleton(skeleton_result, img_width, img_height, binary_for_start);
 
+#ifdef SMTC2GO_DEBUG
         // 绘制特征点
         cv::Scalar blue(255, 0, 0), red(0, 0, 255), green(0, 255, 0);
         cv::Scalar cyan(255, 255, 0), purple(255, 0, 255), yellow(0, 255, 255);
@@ -450,24 +462,31 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                 cv::Point(skel_result.right_start_x - 5, skel_result.right_start_y - 8),
                 cv::FONT_HERSHEY_SIMPLEX, 0.3, cyan, 1);
         }
+#endif
 
-        auto ring_result = cv_boost::detect_ring(skeleton_result, img_width, img_height);
+        auto ring_result = detect_ring(skeleton_result, img_width, img_height);
 
+#ifdef SMTC2GO_DEBUG
         if (ring_result.has_ring) {
+            cv::Scalar green(0, 255, 0);
             cv::circle(result_img, cv::Point(ring_result.ring_center_x, 60), 20, green, 2);
             std::string ring_text = "RING " + std::string(1, ring_result.ring_side);
             cv::putText(result_img, ring_text,
                 cv::Point(ring_result.ring_center_x - 20, 50),
                 cv::FONT_HERSHEY_SIMPLEX, 0.4, green, 1);
         }
+#endif
 
         cv::Point legacy_target, folded_target;
         float left_speed = base_speed;
         float right_speed = base_speed;
         if (select_folded_target_point(skeleton_result, img_width, img_height, skel_result,
                                        s_ring_status, s_ring_type, legacy_target, folded_target)) {
+#ifdef SMTC2GO_DEBUG
+            cv::Scalar purple(255, 0, 255), yellow(0, 255, 255);
             cv::circle(result_img, legacy_target, 5, purple, -1);
             cv::circle(result_img, folded_target, 5, yellow, -1);
+#endif
 
             cv::Point start_center(
                 (skel_result.left_start_x + skel_result.right_start_x) / 2,
@@ -481,10 +500,12 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
             left_speed = ls;
             right_speed = rs;
 
+#ifdef SMTC2GO_DEBUG
             char speed_text[32];
             snprintf(speed_text, sizeof(speed_text), "l:%.1f|r:%.1f", left_speed, right_speed);
             cv::putText(result_img, speed_text, cv::Point(folded_target.x + 4, folded_target.y - 4),
                 cv::FONT_HERSHEY_SIMPLEX, 0.3, yellow, 1);
+#endif
         }
 
         bool has_ring = ring_result.has_ring;
@@ -501,8 +522,10 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                         s_ring_status = RingStatus::Discovered;
                         s_ring_type = (ring_result.ring_side == 'l') ? RingType::Left : RingType::Right;
                         s_ring_detect_count = 0;
+#ifdef SMTC2GO_DEBUG
                         printf("[帧 %d] 未发现 -> 已发现 (%s圆环)\n", frame_number,
                                s_ring_type == RingType::Left ? "左" : "右");
+#endif
                     }
                 } else { s_ring_detect_count = 0; }
                 break;
@@ -513,7 +536,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                     if (s_ring_disappear_count >= confirm_threshold) {
                         s_ring_status = RingStatus::PrepareEnter;
                         s_ring_disappear_count = 0;
+#ifdef SMTC2GO_DEBUG
                         printf("[帧 %d] 已发现 -> 准备入环\n", frame_number);
+#endif
                     }
                 } else {
                     s_ring_disappear_count = 0;
@@ -526,7 +551,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                     if (s_single_path_count >= confirm_threshold) {
                         s_ring_status = RingStatus::PrepareExit;
                         s_single_path_count = 0;
+#ifdef SMTC2GO_DEBUG
                         printf("[帧 %d] 准备入环 -> 准备出环\n", frame_number);
+#endif
                     }
                 } else { s_single_path_count = 0; }
                 break;
@@ -536,7 +563,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                     if (s_dual_path_count >= confirm_threshold) {
                         s_ring_status = RingStatus::AboutToExit;
                         s_dual_path_count = 0;
+#ifdef SMTC2GO_DEBUG
                         printf("[帧 %d] 准备出环 -> 即将出环\n", frame_number);
+#endif
                     }
                 } else { s_dual_path_count = 0; }
                 break;
@@ -547,7 +576,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                         s_ring_status = RingStatus::Exiting;
                         s_ring_type = RingType::None;
                         s_single_path_count = 0;
+#ifdef SMTC2GO_DEBUG
                         printf("[帧 %d] 即将出环 -> 出环中\n", frame_number);
+#endif
                     }
                 } else { s_single_path_count = 0; }
                 break;
@@ -558,12 +589,15 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                         s_ring_status = RingStatus::NotFound;
                         s_ring_type = RingType::None;
                         s_single_path_count = 0;
+#ifdef SMTC2GO_DEBUG
                         printf("[帧 %d] 出环中 -> 未发现\n", frame_number);
+#endif
                     }
                 } else { s_single_path_count = 0; }
                 break;
         }
 
+#ifdef SMTC2GO_DEBUG
         if (frame_number % 20 == 0) {
             printf("[帧 %d] 状态=%s 圆坏类型=%s 分支=%d 端点=%d 有环=%d 环位置=%d\n",
                    frame_number, ring_status_name(s_ring_status), ring_type_name(s_ring_type),
@@ -574,11 +608,14 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                               resized, skeleton_img, result_img, img_width, img_height);
         }
 
+#ifdef SMTC2GO_DEBUG_IMSHOW
         cv::Mat result_display, skeleton_display;
         cv::resize(result_img, result_display, cv::Size(400, 300));
         cv::resize(skeleton_img, skeleton_display, cv::Size(400, 300));
         cv::imshow("Result", result_display);
         cv::imshow("Skeleton", skeleton_display);
+#endif
+#endif
 
         return std::make_tuple(left_speed, right_speed);
 
@@ -593,7 +630,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                 if (s_ring_disappear_count >= confirm_threshold) {
                     s_ring_status = RingStatus::PrepareEnter;
                     s_ring_disappear_count = 0;
+#ifdef SMTC2GO_DEBUG
                     printf("[帧 %d] 已发现 -> 准备入环\n", frame_number);
+#endif
                 }
                 break;
             case RingStatus::PrepareEnter:
@@ -607,6 +646,7 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                 s_single_path_count = 0;
                 break;
         }
+#ifdef SMTC2GO_DEBUG
         if (frame_number % 20 == 0) {
             printf("[帧 %d] 状态=%s 圆坏类型=%s 分支=%d 端点=%d 有环=%d 环位置=%d\n",
                    frame_number, ring_status_name(s_ring_status), ring_type_name(s_ring_type),
@@ -617,11 +657,14 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                               resized, skeleton_img, result_img, img_width, img_height);
         }
 
+#ifdef SMTC2GO_DEBUG_IMSHOW
         cv::Mat result_display, skeleton_display;
         cv::resize(result_img, result_display, cv::Size(400, 300));
         cv::resize(skeleton_img, skeleton_display, cv::Size(400, 300));
         cv::imshow("Result", result_display);
         cv::imshow("Skeleton", skeleton_display);
+#endif
+#endif
 
         return std::make_tuple(base_speed, base_speed);
     }

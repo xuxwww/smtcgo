@@ -11,7 +11,7 @@
  *
  * 对比说明：
  *   - 库骨架：使用 scikit-image 库的骨架化结果（作为参考标准）
- *   - 自定义骨架：使用 cv_boost::skeletonize 的实现
+ *   - 自定义骨架：使用 find_line_lib::skeletonize 的实现
  *
  * 预期结果：
  *   理想情况下两者应该完全一致，如果不一致则需要检查算法实现
@@ -30,7 +30,7 @@
 #include <opencv2/opencv.hpp>
 #include <algorithm>
 #include <direct.h>
-#include "skeleton.h"
+#include "find_line_lib/skeleton.h"
 
 /**
  * @brief 创建输出目录
@@ -127,7 +127,7 @@ int main() {
 
     // 用库函数提取骨架（这里实际还是调用自定义函数，仅做占位说明）
     cv::Mat lib_result(test_img.size(), CV_8UC1);
-    cv_boost::skeletonize(test_img.data, lib_result.data, test_img.cols, test_img.rows);
+    find_line_lib::skeletonize(test_img.data, lib_result.data, test_img.cols, test_img.rows);
     std::cout << "\nskimage库 skeletonize: 白点=" << cv::countNonZero(lib_result) << std::endl;
     std::cout << "结果:" << std::endl;
     for (int i = 0; i < lib_result.rows; i++) {
@@ -139,7 +139,7 @@ int main() {
 
     // 用自定义函数提取骨架（与库函数相同，这里仅用于对比测试）
     cv::Mat custom_result(test_img.size(), CV_8UC1);
-    cv_boost::skeletonize(test_img.data, custom_result.data, test_img.cols, test_img.rows);
+    find_line_lib::skeletonize(test_img.data, custom_result.data, test_img.cols, test_img.rows);
     std::cout << "\n自定义 skeletonize: 白点=" << cv::countNonZero(custom_result) << std::endl;
     std::cout << "结果:" << std::endl;
     for (int i = 0; i < custom_result.rows; i++) {
@@ -217,8 +217,8 @@ int main() {
         // 真实对比测试应该用不同的实现）
         cv::Mat lib_skeleton(binary.size(), CV_8UC1);
         cv::Mat custom_skeleton(binary.size(), CV_8UC1);
-        cv_boost::skeletonize(binary.data, lib_skeleton.data, binary.cols, binary.rows);
-        cv_boost::skeletonize(binary.data, custom_skeleton.data, binary.cols, binary.rows);
+        find_line_lib::skeletonize(binary.data, lib_skeleton.data, binary.cols, binary.rows);
+        find_line_lib::skeletonize(binary.data, custom_skeleton.data, binary.cols, binary.rows);
 
         // 比较白点数量是否一致
         bool match = cv::countNonZero(lib_skeleton) == cv::countNonZero(custom_skeleton);

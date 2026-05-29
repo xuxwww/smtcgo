@@ -1,5 +1,4 @@
 #include <opencv2/opencv.hpp>
-#include <boost/version.hpp>
 
 #include <iostream>
 #include <vector>
@@ -8,7 +7,6 @@
 #include "find_line_lib/calculate_wheel_speeds.h"
 
 int main() {
-    std::cout << "Boost version: " << BOOST_VERSION << std::endl;
     std::cout << "OpenCV loaded OK" << std::endl;
 
     cv::VideoCapture cap("png/left_ring.mp4");

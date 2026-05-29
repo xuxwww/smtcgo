@@ -1,4 +1,4 @@
-#include "skeleton.h"
+#include "find_line_lib/skeleton.h"
 #include "find_line_lib/common.h"
 #include "find_line_lib/get_start_point.h"
 
@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <opencv2/opencv.hpp>
 
-namespace cv_boost {
+namespace find_line_lib {
 
 using namespace find_line_lib;
 
