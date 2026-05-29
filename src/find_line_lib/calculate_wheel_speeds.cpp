@@ -504,7 +504,7 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                 Point(start_center.x, start_center.y),
                 Point(folded_target.x, folded_target.y)
             };
-            auto [ls, rs] = calculate_wheel_speeds(line, 2, base_speed, max_gain_ratio);
+            auto [rs, ls] = calculate_wheel_speeds(line, 2, base_speed, max_gain_ratio);
             left_speed = ls;
             right_speed = rs;
 
