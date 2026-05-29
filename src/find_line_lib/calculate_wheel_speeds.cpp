@@ -209,6 +209,13 @@ bool select_folded_target_point(const uint8_t* skeleton, int width, int height,
 
     folded_target = legacy_target;
 
+    // 长度越长，比例越小；长度越短，比例越大
+    auto length_to_ratio = [](double total_length) -> double {
+        constexpr double base_ratio = 0.8;
+        constexpr double length_scale = 100.0;
+        return base_ratio * length_scale / (length_scale + total_length);
+    };
+
     bool has_left = skel_result.left_start_x > 0 || skel_result.left_start_y > 0;
     bool has_right = skel_result.right_start_x > 0 || skel_result.right_start_y > 0;
     if (!has_left || !has_right) return true;
@@ -235,7 +242,7 @@ bool select_folded_target_point(const uint8_t* skeleton, int width, int height,
             for (size_t i = static_cast<size_t>(merge_index); i < left_path.size(); ++i)
                 virtual_path.push_back(left_path[i]);
             double total_length = polyline_length(virtual_path);
-            folded_target = point_at_distance(virtual_path, total_length * 0.5);
+            folded_target = point_at_distance(virtual_path, total_length * length_to_ratio(total_length));
             return true;
         }
     }
