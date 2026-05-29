@@ -133,8 +133,9 @@ int main() {
             case find_line_lib::RingStatus::PrepareEnter: {
                 // 准备入环状态：调用 prepare_enter_ring 检测入环点
                 // 首先获取搜索起点
+                find_line_lib::Point start_pt(w/2, h-1);
                 auto start_result = find_line_lib::get_start_point(bin_img.data, w, h,
-                    &find_line_lib::Point(w/2, h-1), 1, w-1, 1, h-1, "horizontal");
+                    &start_pt, 1, w-1, 1, h-1, "horizontal");
                 if (start_result == nullptr) {
                     break;
                 }
@@ -161,8 +162,9 @@ int main() {
 
             case find_line_lib::RingStatus::PrepareExit: {
                 // 准备出环状态：调用 prepare_exit_ring 检测出环点
+                find_line_lib::Point start_pt(w/2, h-1);
                 auto start_result = find_line_lib::get_start_point(bin_img.data, w, h,
-                    &find_line_lib::Point(w/2, h-1), 1, w-1, 1, h-1, "horizontal");
+                    &start_pt, 1, w-1, 1, h-1, "horizontal");
                 if (start_result == nullptr) {
                     break;
                 }

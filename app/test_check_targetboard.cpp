@@ -91,8 +91,9 @@ int main() {
 
     // 获取赛道边界起点，用于后续补线计算
     // 从图像底部中心向上搜索
+    find_line_lib::Point start_pt(w/2, h-1);
     auto start_result = find_line_lib::get_start_point(bin_img.data, w, h,
-        &find_line_lib::Point(w/2, h-1), 1, w-1, 1, h-1, "horizontal");
+        &start_pt, 1, w-1, 1, h-1, "horizontal");
 
     // 遍历所有可能的赛道状态
     for (int status = 0; status < static_cast<int>(find_line_lib::ModelRecognitionStatus::Right) + 1; status++) {

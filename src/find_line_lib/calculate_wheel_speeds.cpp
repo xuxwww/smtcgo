@@ -387,9 +387,10 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
             full_binary[y * img_width + x] = dilated.at<uint8_t>(y, x);
 
     int ref_center_x = img_width / 2;
+    Point start_pt(img_width / 2, img_height - 1);
     auto start_result = get_start_point(
         full_binary, img_width, img_height,
-        &Point(img_width / 2, img_height - 1),
+        &start_pt,
         1, img_width - 1, 1, img_height - 1, "horizontal");
     if (start_result != nullptr) {
         auto& left_pt = std::get<0>(*start_result);

@@ -135,8 +135,9 @@ int main() {
 
         // 首先获取搜索起点
         // 从图像底部中心向上搜索
+        find_line_lib::Point start_pt(w/2, h-1);
         auto start_result = find_line_lib::get_start_point(bin_img.data, w, h,
-            &find_line_lib::Point(w/2, h-1), 1, w-1, 1, h-1, "horizontal");
+            &start_pt, 1, w-1, 1, h-1, "horizontal");
         if (start_result == nullptr) {
             std::cout << "获取起点失败: " << img_path << std::endl;
             continue;
@@ -144,7 +145,6 @@ int main() {
 
         // 创建状态切换器（虽然入环阶段可能不需要ring_type）
         find_line_lib::StatusSwitcher ss;
-        ss.ring_type = find_line_lib::RingType::Left;
 
         // 调用 prepare_enter_ring 准备入环
         // 参数：二值图数据、宽高、圆环类型、搜索起点
@@ -200,8 +200,9 @@ int main() {
         int w = bin_img.cols;
 
         // 获取搜索起点
+        find_line_lib::Point start_pt(w/2, h-1);
         auto start_result = find_line_lib::get_start_point(bin_img.data, w, h,
-            &find_line_lib::Point(w/2, h-1), 1, w-1, 1, h-1, "horizontal");
+            &start_pt, 1, w-1, 1, h-1, "horizontal");
         if (start_result == nullptr) {
             std::cout << "获取起点失败: " << img_path << std::endl;
             continue;

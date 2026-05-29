@@ -67,8 +67,9 @@ int main() {
     //   1, w-1: 搜索范围的左右边界
     //   1, h-1: 搜索范围的上下边界
     //   "horizontal": 水平方向搜索模式
+    find_line_lib::Point start_pt(w/2, h/2);
     auto result = find_line_lib::get_start_point(bin_img.data, w, h,
-        &find_line_lib::Point(w/2, h/2), 1, w-1, 1, h-1, "horizontal");
+        &start_pt, 1, w-1, 1, h-1, "horizontal");
 
     // 检查是否成功找到边界起点
     if (result != nullptr) {

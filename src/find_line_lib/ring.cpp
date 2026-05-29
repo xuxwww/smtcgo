@@ -37,8 +37,9 @@ std::tuple<Point, Point>* discover_ring(const uint8_t* bin_img, int width, int h
     // 在中间区域扫描每一行，找最窄的左右边界
     for (int row = start_row; row < end_row; ++row) {
         // 从图像中心 (w/2, row) 开始水平扫描
+        Point start_pt(w / 2, row);
         auto result = get_start_point(bin_img, w, h,
-            &Point(w / 2, row),
+            &start_pt,
             1, w - 1, 1, h - 1, "horizontal");
 
         if (result != nullptr) {
@@ -79,8 +80,9 @@ std::tuple<Point, Point>* prepare_enter_ring(const uint8_t* bin_img, int width, 
 
     // 从上往下扫描，记录每行的左右边界和宽度
     for (int row = scan_start_height; row < h - 1; row += scan_row_step) {
+        Point start_pt(w / 2, row);
         auto result = get_start_point(bin_img, w, h,
-            &Point(w / 2, row),
+            &start_pt,
             1, w - 1, 1, h - 1, "horizontal");
 
         if (result != nullptr) {
@@ -166,8 +168,9 @@ std::tuple<Point, Point>* prepare_exit_ring(const uint8_t* bin_img, int width, i
 
     // 从下往上扫描（row 递减，scan_row_step 为负数）
     for (int row = h - 1; row > scan_stop_height; row += scan_row_step) {
+        Point start_pt(w / 2, row);
         auto result = get_start_point(bin_img, w, h,
-            &Point(w / 2, row),
+            &start_pt,
             1, w - 1, 1, h - 1, "horizontal");
 
         if (result != nullptr) {

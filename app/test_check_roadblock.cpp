@@ -81,11 +81,9 @@ int main() {
         // 首先调用 get_start_point 获取搜索起点
         // 从图像底部中心 (w/2, h-1) 向上搜索赛道边界
         // 搜索范围限制在 x: [1, w-1], y: [1, h-1]
+        find_line_lib::Point start_pt(w/2, h-1);
         auto start_result = find_line_lib::get_start_point(bin_img.data, w, h,
-
-
-            
-            &find_line_lib::Point(w/2, h-1), 1, w-1, 1, h-1, "horizontal");
+            &start_pt, 1, w-1, 1, h-1, "horizontal");
 
         // 如果无法获取起点，说明图像中可能没有赛道，跳过
         if (start_result == nullptr) {
