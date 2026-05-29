@@ -57,11 +57,18 @@ SkeletonAnalysisResult analyze_skeleton(const uint8_t* skeleton, int width, int 
 
 // ==================== 圆环检测 ====================
 // 原理：
-//   1. 对骨架做膨胀（1像素 -> 3x3的块）
+//   1. 对骨架做膨胀（1像素 -> 5x5的块）
 //   2. 用连通域分析找所有轮廓
 //   3. 看哪些轮廓被其他轮廓包含（内孔）
 //   4. 有内孔的说明是闭合环
+// 参数：
+//   min_area_ratio: 内孔面积占图面积比例阈值（越小越宽松）
+//   dilate_kernel_size: 膨胀核大小（越大越容易补闭断裂环）
+//   dilate_iterations: 膨胀迭代次数
 // 返回：是否有环、环中心位置、环在左还是右
-RingDetectionResult detect_ring(const uint8_t* skeleton, int width, int height);
+RingDetectionResult detect_ring(const uint8_t* skeleton, int width, int height,
+                                double min_area_ratio = 0.05,
+                                int dilate_kernel_size = 5,
+                                int dilate_iterations = 1);
 
 }

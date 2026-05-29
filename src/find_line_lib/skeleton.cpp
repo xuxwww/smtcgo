@@ -212,7 +212,10 @@ SkeletonAnalysisResult analyze_skeleton(const uint8_t* skeleton, int width, int 
 
 // ==================== 圆环检测 ====================
 // 通过膨胀骨架形成轮廓，然后用 RETR_TREE 层级关系找内孔
-RingDetectionResult detect_ring(const uint8_t* skeleton, int width, int height) {
+RingDetectionResult detect_ring(const uint8_t* skeleton, int width, int height,
+                                double min_area_ratio,
+                                int dilate_kernel_size,
+                                int dilate_iterations) {
     RingDetectionResult result;
     result.has_ring = false;
     result.ring_center_x = 0;
@@ -221,7 +224,8 @@ RingDetectionResult detect_ring(const uint8_t* skeleton, int width, int height) 
 
     cv::Mat skeleton_mat(height, width, CV_8UC1, const_cast<uint8_t*>(skeleton));
     cv::Mat thick;
-    cv::dilate(skeleton_mat, thick, cv::Mat::ones(3, 3, CV_8UC1), cv::Point(-1, -1), 1);
+    cv::Mat kernel = cv::Mat::ones(dilate_kernel_size, dilate_kernel_size, CV_8UC1);
+    cv::dilate(skeleton_mat, thick, kernel, cv::Point(-1, -1), dilate_iterations);
 
     std::vector<std::vector<cv::Point>> contours;
     std::vector<cv::Vec4i> hierarchy;
@@ -231,7 +235,7 @@ RingDetectionResult detect_ring(const uint8_t* skeleton, int width, int height) 
         return result;
     }
 
-    double min_area = static_cast<double>(width) * height * 0.1;
+    double min_area = static_cast<double>(width) * height * min_area_ratio;
     int center_x = width / 2;
 
     for (size_t i = 0; i < contours.size(); ++i) {
