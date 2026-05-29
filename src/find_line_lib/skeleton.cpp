@@ -133,12 +133,12 @@ SkeletonAnalysisResult analyze_skeleton(const uint8_t* skeleton, int width, int 
     int bifurcation_count = 0;
     int endpoint_count = 0;
 
-    // 遍历骨架上的每个白点
-    for (int y = 1; y < height - 1; ++y) {
-        for (int x = 1; x < width - 1; ++x) {
+    // 遍历骨架上的每个白点（全图遍历，包括边界）
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
             if (skeleton[y * width + x] == 0) continue;
 
-            // 数8个邻居中有多少个白点
+            // 数8个邻居中有多少个白点（越界邻居不计入）
             int neighbor_count = 0;
             for (int i = 0; i < 8; ++i) {
                 int ny = y + neighbors[i][0];
@@ -169,8 +169,8 @@ SkeletonAnalysisResult analyze_skeleton(const uint8_t* skeleton, int width, int 
         result.right_start_y = right_start.y;
     }
 
-    // 与 Python 一致：过滤掉离左右起始点过近的端点。
-    int distance_threshold = 15;
+    // 过滤掉离左右起始点过近的端点（从15降到8，保留更多端点）
+    int distance_threshold = 8;
     std::vector<std::tuple<int, int>> filtered_endpoints;
     for (auto& ep : result.endpoint_points) {
         int ex = std::get<0>(ep);
