@@ -30,8 +30,7 @@ target_compile_definitions(find_line_lib
 
 target_include_directories(find_line_lib
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(find_line_lib
