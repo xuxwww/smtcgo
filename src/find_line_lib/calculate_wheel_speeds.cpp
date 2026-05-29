@@ -81,19 +81,32 @@ bool choose_legacy_target_endpoint(const SkeletonAnalysisResult& skel_result,
     }
 
     if (status == RingStatus::PrepareEnter || status == RingStatus::AboutToExit) {
+        auto calc_weight = [width, height](int x, int y) -> double {
+            constexpr double w_left = 1.0;
+            constexpr double w_up = 0.5;
+            return w_left * (width - x) + w_up * (height - y);
+        };
+
         if (type == RingType::Left) {
-            int min_x = width;
+            double max_weight = -1.0;
             for (auto& p : skel_result.endpoint_points) {
                 int x = std::get<0>(p);
                 int y = std::get<1>(p);
-                if (x < min_x) { min_x = x; target_pt = cv::Point(x, y); }
+                double weight = calc_weight(x, y);
+                if (weight > max_weight) { max_weight = weight; target_pt = cv::Point(x, y); }
             }
         } else {
-            int max_x = -1;
+            auto calc_weight_right = [width, height](int x, int y) -> double {
+                constexpr double w_right = 1.0;
+                constexpr double w_up = 0.5;
+                return w_right * x + w_up * (height - y);
+            };
+            double max_weight = -1.0;
             for (auto& p : skel_result.endpoint_points) {
                 int x = std::get<0>(p);
                 int y = std::get<1>(p);
-                if (x > max_x) { max_x = x; target_pt = cv::Point(x, y); }
+                double weight = calc_weight_right(x, y);
+                if (weight > max_weight) { max_weight = weight; target_pt = cv::Point(x, y); }
             }
         }
         return true;
