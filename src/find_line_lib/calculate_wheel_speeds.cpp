@@ -344,6 +344,8 @@ std::tuple<float, float> calculate_wheel_speeds(const Point* line, int line_size
 
 std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base_speed, float max_gain_ratio) {
 // ==================== 帧处理 ====================
+    TRACE_SCOPE("整帧处理");
+
     // static 状态机变量
     static RingStatus s_ring_status = RingStatus::NotFound;
     static RingType s_ring_type = RingType::None;
@@ -364,6 +366,10 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
         s_windows_created = true;
     }
 #endif
+#ifdef SMTC2GO_DEBUG_TRACE_PERFORMANCE
+    static PerfTraceAccumulator s_perf_acc;
+    static int s_perf_frame_count = 0;
+#endif
     ++s_frame_number;
     int frame_number = s_frame_number;
     constexpr int confirm_threshold = 20;
@@ -372,6 +378,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
 
     // 图像预处理
     cv::Mat resized;
+    cv::Mat dilated;
+    {
+    TRACE_SCOPE("图像预处理");
     cv::resize(image, resized, cv::Size(img_width, img_height));
 
     cv::Mat gray;
@@ -386,12 +395,15 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
     cv::Mat element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
     cv::Mat eroded;
     cv::erode(binary, eroded, element, cv::Point(-1, -1), 2);
-    cv::Mat dilated;
     cv::dilate(eroded, dilated, element, cv::Point(-1, -1), 1);
+    } // preprocess
 
     // 轮廓检测
     std::vector<std::vector<cv::Point>> contours;
+    {
+    TRACE_SCOPE("轮廓检测");
     cv::findContours(dilated, contours, cv::noArray(), cv::RETR_TREE, cv::CHAIN_APPROX_SIMPLE);
+    }
 
 #ifdef SMTC2GO_DEBUG
     cv::Mat result_img = resized.clone();
@@ -436,6 +448,11 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
         cv::drawContours(result_img, contours, best_contour_index, cv::Scalar(0, 255, 0), 2);
 #endif
 
+        // 骨架分析
+        uint8_t skeleton_result[img_height * img_width];
+        {
+        TRACE_SCOPE("骨架提取");
+
         cv::Mat road_mask = cv::Mat::zeros(img_height, img_width, CV_8UC1);
         cv::drawContours(road_mask, contours, best_contour_index, cv::Scalar(255), -1);
 
@@ -447,8 +464,8 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
             for (int x = 0; x < img_width; ++x)
                 road_binary[y * img_width + x] = road_area.at<uint8_t>(y, x);
 
-        uint8_t skeleton_result[img_height * img_width];
         skeletonize(road_binary, skeleton_result, img_width, img_height);
+        } // skeleton
 
 #ifdef SMTC2GO_DEBUG
         skeleton_img = cv::Mat(img_height, img_width, CV_8UC1, skeleton_result).clone();
@@ -459,7 +476,10 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
             for (int x = 0; x < img_width; ++x)
                 binary_for_start[y * img_width + x] = dilated.at<uint8_t>(y, x);
 
-        auto skel_result = analyze_skeleton(skeleton_result, img_width, img_height, binary_for_start);
+        auto skel_result = [&]() {
+            TRACE_SCOPE("骨架分析");
+            return analyze_skeleton(skeleton_result, img_width, img_height, binary_for_start);
+        }();
 
 #ifdef SMTC2GO_DEBUG
         // 绘制特征点
@@ -485,7 +505,10 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
         }
 #endif
 
-        auto ring_result = detect_ring(skeleton_result, img_width, img_height);
+        auto ring_result = [&]() {
+            TRACE_SCOPE("圆环检测");
+            return detect_ring(skeleton_result, img_width, img_height);
+        }();
 
 #ifdef SMTC2GO_DEBUG
         if (ring_result.has_ring) {
@@ -501,6 +524,8 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
         cv::Point legacy_target, folded_target;
         float left_speed = base_speed;
         float right_speed = base_speed;
+        {
+        TRACE_SCOPE("目标点选择");
         if (select_folded_target_point(skeleton_result, img_width, img_height, skel_result,
                                        s_ring_status, s_ring_type, legacy_target, folded_target)) {
 #ifdef SMTC2GO_DEBUG
@@ -528,6 +553,7 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                 cv::FONT_HERSHEY_SIMPLEX, 0.3, yellow, 1);
 #endif
         }
+        } // select_target
 
         bool has_ring = ring_result.has_ring;
         int branch_count = skel_result.branch_count;
@@ -624,6 +650,12 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
         cv::imshow("Result", result_display);
         cv::imshow("Skeleton", skeleton_display);
 #endif
+#endif
+
+#ifdef SMTC2GO_DEBUG_TRACE_PERFORMANCE
+        if (s_frame_number % 100 == 0) {
+            s_perf_acc.report();
+        }
 #endif
 
         return std::make_tuple(left_speed, right_speed);

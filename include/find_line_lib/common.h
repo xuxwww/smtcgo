@@ -36,6 +36,52 @@ inline void log_message(LogLevel level, const char* file, int line, const char* 
 #define LOG_ERROR(fmt, ...)
 #endif
 
+// ==================== 性能追踪宏 ====================
+// SMTC2GO_DEBUG_TRACE_PERFORMANCE: 测量各阶段耗时，输出到 stderr，不启用时零开销
+#ifdef SMTC2GO_DEBUG_TRACE_PERFORMANCE
+#include <chrono>
+
+struct PerfTraceScope {
+    const char* name;
+    std::chrono::high_resolution_clock::time_point start;
+    PerfTraceScope(const char* n) : name(n), start(std::chrono::high_resolution_clock::now()) {}
+    ~PerfTraceScope() {
+        auto end = std::chrono::high_resolution_clock::now();
+        double ms = std::chrono::duration<double, std::milli>(end - start).count();
+        fprintf(stderr, "[性能] %-20s 耗时 %8.3f 毫秒\n", name, ms);
+    }
+};
+
+struct PerfTraceAccumulator {
+    struct Entry { const char* name; double total_ms; int count; };
+    Entry entries[16];
+    int size;
+    PerfTraceAccumulator() : size(0) {}
+    void record(const char* name, double ms) {
+        for (int i = 0; i < size; ++i) {
+            if (entries[i].name == name) { entries[i].total_ms += ms; entries[i].count++; return; }
+        }
+        entries[size++] = {name, ms, 1};
+    }
+    void report() const {
+        fprintf(stderr, "\n======== 性能统计 ========\n");
+        for (int i = 0; i < size; ++i) {
+            fprintf(stderr, "[性能] %-20s 平均 %8.3f 毫秒 (共 %d 次)\n",
+                    entries[i].name, entries[i].total_ms / entries[i].count, entries[i].count);
+        }
+        fprintf(stderr, "==========================\n\n");
+    }
+};
+
+#define TRACE_SCOPE(name) PerfTraceScope _perf_scope_##__LINE__(name)
+#define TRACE_RECORD(acc, name, ms) (acc).record(name, ms)
+#define TRACE_REPORT(acc) (acc).report()
+#else
+#define TRACE_SCOPE(name)
+#define TRACE_RECORD(acc, name, ms)
+#define TRACE_REPORT(acc)
+#endif
+
 constexpr int IMAGE_H_MAX = 480;
 constexpr int IMAGE_W_MAX = 640;
 
