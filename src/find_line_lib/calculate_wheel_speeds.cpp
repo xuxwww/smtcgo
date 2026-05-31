@@ -294,9 +294,9 @@ std::tuple<float, float> calculate_wheel_speeds(const Point* line, int line_size
                                                  float base_speed,
                                                  float max_gain_ratio) {
     // 数据点太少，直接返回基础速度
-    if (line_size < 2) {
-        return std::make_tuple(base_speed, base_speed);
-    }
+  // if (line_size < 2) {
+  //     return std::make_tuple(base_speed, base_speed);
+  // }
 
     // 收集统计数据，用于最小二乘法
     float sum_x = 0.0f;
