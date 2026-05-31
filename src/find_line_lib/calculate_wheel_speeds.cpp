@@ -293,23 +293,23 @@ bool select_folded_target_point(const uint8_t* skeleton, int width, int height,
 std::tuple<float, float> calculate_wheel_speeds(const Point* line, int line_size,
                                                  float base_speed,
                                                  float max_gain_ratio) {
-    // 数据点太少，直接返回基础速度
+  // 数据点太少，直接返回基础速度
   // if (line_size < 2) {
   //     return std::make_tuple(base_speed, base_speed);
   // }
 
-    // 收集统计数据，用于最小二乘法
-    float sum_x = 0.0f;
-    float sum_y = 0.0f;
-    float sum_yy = 0.0f;
-    float sum_xy = 0.0f;
+  // 收集统计数据，用于最小二乘法
+  float sum_x = 0.0f;
+  float sum_y = 0.0f;
+  float sum_yy = 0.0f;
+  float sum_xy = 0.0f;
 
-    for (int i = 0; i < line_size; ++i) {
-        sum_x += static_cast<float>(line[i].x);
-        sum_y += static_cast<float>(line[i].y);
-        sum_yy += static_cast<float>(line[i].y) * line[i].y;
-        sum_xy += static_cast<float>(line[i].x) * line[i].y;
-    }
+  for (int i = 0; i < line_size; ++i) {
+    sum_x += static_cast<float>(line[i].x);
+    sum_y += static_cast<float>(line[i].y);
+    sum_yy += static_cast<float>(line[i].y) * line[i].y;
+    sum_xy += static_cast<float>(line[i].x) * line[i].y;
+  }
 
     // 拟合 x = k*y + b，让竖直中线的斜率为0
     float denom = static_cast<float>(line_size) * sum_yy - sum_y * sum_y;
@@ -355,6 +355,7 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
     static int s_dual_path_count = 0;
     static int s_frame_number = 0;
 #ifdef SMTC2GO_DEBUG
+#ifdef SMTC2GO_DEBUG_IMSHOW
     static bool s_debug_dirs_created = false;
     static bool s_windows_created = false;
     if (!s_debug_dirs_created) { create_debug_directories(); s_debug_dirs_created = true; }
@@ -365,6 +366,7 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
         cv::resizeWindow("Result", 400, 300);
         s_windows_created = true;
     }
+#endif // SMTC2GO_DEBUG_IMSHOW
 #endif
 #ifdef SMTC2GO_DEBUG_TRACE_PERFORMANCE
     static PerfTraceAccumulator s_perf_acc;
@@ -592,22 +594,22 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
               if (branch_count == 1 && endpoint_count == 2) {
                 s_single_path_count++;
                 s_dual_path_count = 0;
-                    if (s_single_path_count >= confirm_threshold) {
-                        s_ring_status = RingStatus::PrepareExit;
-                        s_single_path_count = 0;
-                        LOG_INFO("[帧 %d] 准备入环 -> 准备出环", frame_number);
-                    }
+                if (s_single_path_count >= confirm_threshold) {
+                  s_ring_status = RingStatus::PrepareExit;
+                  s_single_path_count = 0;
+                  LOG_INFO("[帧 %d] 准备入环 -> 准备出环", frame_number);
+                }
                 } else { s_single_path_count = 0; }
                 break;
             case RingStatus::PrepareExit:
               if (branch_count > 1 && endpoint_count > 2) {
                 s_dual_path_count++;
                 s_single_path_count = 0;
-                    if (s_dual_path_count >= confirm_threshold) {
-                        s_ring_status = RingStatus::AboutToExit;
-                        s_dual_path_count = 0;
-                        LOG_INFO("[帧 %d] 准备出环 -> 即将出环", frame_number);
-                    }
+                if (s_dual_path_count >= confirm_threshold) {
+                  s_ring_status = RingStatus::AboutToExit;
+                  s_dual_path_count = 0;
+                  LOG_INFO("[帧 %d] 准备出环 -> 即将出环", frame_number);
+                }
               } else {
                 s_dual_path_count = 0;
               }
@@ -616,12 +618,12 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
               if (branch_count >= 2 && endpoint_count >= 3) {
                 s_single_path_count++;
                 s_dual_path_count = 0;
-                    if (s_single_path_count >= confirm_threshold) {
-                        s_ring_status = RingStatus::Exiting;
-                        s_ring_type = RingType::None;
-                        s_single_path_count = 0;
-                        LOG_INFO("[帧 %d] 即将出环 -> 出环中", frame_number);
-                    }
+                if (s_single_path_count >= confirm_threshold) {
+                  s_ring_status = RingStatus::Exiting;
+                  s_ring_type = RingType::None;
+                  s_single_path_count = 0;
+                  LOG_INFO("[帧 %d] 即将出环 -> 出环中", frame_number);
+                }
                 } else { s_single_path_count = 0; }
                 break;
             case RingStatus::Exiting:
@@ -644,9 +646,11 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                       branch_count, endpoint_count, has_ring ? 1 : 0, ring_result.ring_center_x);
         }
         if (frame_number % 10 == 0) {
-            save_debug_images(ring_status_name(s_ring_status), frame_number,
+#ifdef SMTC2GO_DEBUG_SAVE_IMAGES
+          save_debug_images(ring_status_name(s_ring_status), frame_number,
                               resized, skeleton_img, result_img, img_width, img_height);
-        }
+#endif
+                            }
 
 #ifdef SMTC2GO_DEBUG_IMSHOW
         cv::Mat result_display, skeleton_display;
