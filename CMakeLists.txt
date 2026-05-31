@@ -38,6 +38,7 @@ target_include_directories(find_line_lib
 
 target_link_libraries(find_line_lib
     PUBLIC ${OpenCV_LIBS}
+    stdc++fs
 )
 
 # ==================== 可执行文件 ====================
