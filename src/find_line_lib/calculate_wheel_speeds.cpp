@@ -589,8 +589,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                 }
                 break;
             case RingStatus::PrepareEnter:
-                if (branch_count == 1 && endpoint_count == 1) {
-                    s_single_path_count++; s_dual_path_count = 0;
+              if (branch_count == 1 && endpoint_count == 2) {
+                s_single_path_count++;
+                s_dual_path_count = 0;
                     if (s_single_path_count >= confirm_threshold) {
                         s_ring_status = RingStatus::PrepareExit;
                         s_single_path_count = 0;
@@ -599,18 +600,22 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                 } else { s_single_path_count = 0; }
                 break;
             case RingStatus::PrepareExit:
-                if (endpoint_count >= 2) {
-                    s_dual_path_count++; s_single_path_count = 0;
+              if (branch_count > 1 && endpoint_count > 2) {
+                s_dual_path_count++;
+                s_single_path_count = 0;
                     if (s_dual_path_count >= confirm_threshold) {
                         s_ring_status = RingStatus::AboutToExit;
                         s_dual_path_count = 0;
                         LOG_INFO("[帧 %d] 准备出环 -> 即将出环", frame_number);
                     }
-                } else { s_dual_path_count = 0; }
+              } else {
+                s_dual_path_count = 0;
+              }
                 break;
             case RingStatus::AboutToExit:
-                if (branch_count == 1 && endpoint_count == 1) {
-                    s_single_path_count++; s_dual_path_count = 0;
+              if (branch_count >= 2 && endpoint_count >= 3) {
+                s_single_path_count++;
+                s_dual_path_count = 0;
                     if (s_single_path_count >= confirm_threshold) {
                         s_ring_status = RingStatus::Exiting;
                         s_ring_type = RingType::None;
@@ -661,51 +666,9 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
         return std::make_tuple(left_speed, right_speed);
 
     } else {
-        switch (s_ring_status) {
-            case RingStatus::NotFound:
-                s_ring_detect_count = 0;
-                break;
-            case RingStatus::Discovered:
-                s_ring_disappear_count++;
-                s_ring_detect_count = 0;
-                if (s_ring_disappear_count >= confirm_threshold) {
-                    s_ring_status = RingStatus::PrepareEnter;
-                    s_ring_disappear_count = 0;
-                    LOG_INFO("[帧 %d] 已发现 -> 准备入环", frame_number);
-                }
-                break;
-            case RingStatus::PrepareEnter:
-            case RingStatus::AboutToExit:
-                s_single_path_count = 0;
-                break;
-            case RingStatus::PrepareExit:
-                s_dual_path_count = 0;
-                break;
-            case RingStatus::Exiting:
-                s_single_path_count = 0;
-                break;
-        }
-#ifdef SMTC2GO_DEBUG
-        if (frame_number % 20 == 0) {
-            LOG_DEBUG("[帧 %d] 状态=%s 圆坏类型=%s 分支=%d 端点=%d 有环=%d 环位置=%d",
-                      frame_number, ring_status_name(s_ring_status), ring_type_name(s_ring_type),
-                      0, 0, 0, 0);
-        }
-        if (frame_number % 10 == 0) {
-            save_debug_images(ring_status_name(s_ring_status), frame_number,
-                              resized, skeleton_img, result_img, img_width, img_height);
-        }
+      LOG_WARN("[帧 %d] 未找到合适的轮廓，丢线了", frame_number);
 
-#ifdef SMTC2GO_DEBUG_IMSHOW
-        cv::Mat result_display, skeleton_display;
-        cv::resize(result_img, result_display, cv::Size(400, 300));
-        cv::resize(skeleton_img, skeleton_display, cv::Size(400, 300));
-        cv::imshow("Result", result_display);
-        cv::imshow("Skeleton", skeleton_display);
-#endif
-#endif
-
-        return std::make_tuple(base_speed, base_speed);
+        return std::make_tuple(0, 0);
     }
 }
 
