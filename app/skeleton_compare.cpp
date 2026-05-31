@@ -29,17 +29,22 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <algorithm>
-#include <direct.h>
 #include "find_line_lib/skeleton.h"
+
+#ifdef _WIN32
+    #include <direct.h>
+    #define MKDIR(dir) _mkdir(dir)
+#else
+    #include <sys/stat.h>
+    #define MKDIR(dir) mkdir(dir, 0755)
+#endif
 
 /**
  * @brief 创建输出目录
  * @param dir 目录路径
- *
- * 使用 _mkdir 而非 mkdir 以兼容 Windows 平台
  */
 void create_output_dir(const std::string& dir) {
-    _mkdir(dir.c_str());
+    MKDIR(dir.c_str());
 }
 
 /**
