@@ -342,9 +342,12 @@ std::tuple<float, float> calculate_wheel_speeds(const Point* line, int line_size
     return std::make_tuple(left_speed, right_speed);
 }
 
-std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base_speed, float max_gain_ratio) {
-// ==================== 帧处理 ====================
-    TRACE_SCOPE("整帧处理");
+std::tuple<float, float> calculate_wheel_speeds(const cv::Mat &image,
+                                                float base_speed,
+                                                float max_gain_ratio,
+                                                cv::Mat &debug_image) {
+  // ==================== 帧处理 ====================
+  TRACE_SCOPE("整帧处理");
 
     // static 状态机变量
     static RingStatus s_ring_status = RingStatus::NotFound;
@@ -544,9 +547,11 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
                 Point(start_center.x, start_center.y),
                 Point(folded_target.x, folded_target.y)
             };
-            auto [rs, ls] = calculate_wheel_speeds(line, 2, base_speed, max_gain_ratio);
-            left_speed = ls;
-            right_speed = rs;
+            // auto [rs, ls] = calculate_wheel_speeds(line, 2, base_speed,
+            // max_gain_ratio);
+            auto error = (img_width / 2) - folded_target.x;
+            left_speed = base_speed + (error * max_gain_ratio);
+            right_speed = base_speed - (error * max_gain_ratio);
 
 #ifdef SMTC2GO_DEBUG
             char speed_text[32];
@@ -667,12 +672,30 @@ std::tuple<float, float> calculate_wheel_speeds(const cv::Mat& image, float base
         }
 #endif
 
+#ifdef SMTC2GO_DEBUG
+        // 把带紫色 legacy_target / 黄色 folded_target 标注的 result_img
+        // 复制给调用方，便于网页/文件/显示等二次渲染。
+        if (debug_image.empty()) {
+          debug_image = result_img.clone();
+        } else {
+          result_img.copyTo(debug_image);
+        }
+#endif
+
         return std::make_tuple(left_speed, right_speed);
 
     } else {
       LOG_WARN("[帧 %d] 未找到合适的轮廓，丢线了", frame_number);
 
-        return std::make_tuple(0, 0);
+#ifdef SMTC2GO_DEBUG
+      // 没有轮廓时，至少把原图缩放后的结果交给调用方
+      if (debug_image.empty()) {
+        debug_image = resized.clone();
+      } else {
+        resized.copyTo(debug_image);
+      }
+#endif
+      return std::make_tuple(0, 0);
     }
 }
 
